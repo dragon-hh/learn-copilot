@@ -36,7 +36,7 @@ export const generateAIContent = async (
         // Default endpoints if not provided
         let baseUrl = config.baseUrl;
         if (!baseUrl) {
-            if (config.modelName.includes('deepseek')) {
+            if (config.modelName.toLowerCase().includes('deepseek')) {
                 baseUrl = 'https://api.deepseek.com';
             } else {
                 // Fallback for generic custom
@@ -69,8 +69,16 @@ export const generateAIContent = async (
         if (schema) {
             finalPrompt += `\n\nIMPORTANT: Provide your response in valid JSON format. Do not use Markdown code blocks (like \`\`\`json). Just return the raw JSON string.`;
             
-            // NOTE: Only enable response_format for providers known to support it strictly.
-            if (config.modelName === 'deepseek-chat' || config.modelName === 'deepseek-reasoner') {
+            // NOTE: Enable response_format for known providers that support JSON mode.
+            // This now includes official DeepSeek, SiliconFlow (deepseek-ai/...), and generic "json" models.
+            const modelNameLower = config.modelName.toLowerCase();
+            const supportsJsonMode = 
+                modelNameLower.includes('deepseek') || 
+                modelNameLower.includes('gpt-4') || 
+                modelNameLower.includes('gpt-3.5') ||
+                modelNameLower.includes('turbo');
+
+            if (supportsJsonMode) {
                  responseFormat = { type: "json_object" };
             }
         }
