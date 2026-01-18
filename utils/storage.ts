@@ -4,6 +4,20 @@ const USERS_KEY = 'learn_copilot_users';
 const DATA_PREFIX = 'learn_copilot_data_';
 const RESULTS_PREFIX = 'learn_copilot_results_';
 const HISTORY_PREFIX = 'learn_copilot_history_';
+const INSIGHTS_PREFIX = 'learn_copilot_insights_';
+const MODEL_CONFIG_KEY = 'learn_copilot_model_config';
+
+export interface AiInsightsData {
+    speed: string;
+    recommendation: string;
+    timestamp: number;
+}
+
+export interface ModelConfig {
+    modelName: string; // e.g., 'gemini-3-flash-preview', 'deepseek-chat'
+    baseUrl?: string; // Optional custom endpoint
+    apiKey?: string; // User provided key
+}
 
 // --- DEMO DATA CONSTANTS (CHINESE) ---
 const DEMO_KB_ID = 'demo-kb-react';
@@ -72,257 +86,183 @@ const DEMO_PATH: LearningPathData = {
     ]
 };
 
-const DEMO_KB: KnowledgeBase = {
-    id: DEMO_KB_ID,
-    title: 'React 基础 (演示)',
-    description: '预加载的演示数据，用于探索 React 概念、图谱可视化和测试流程。',
-    tag: '演示',
-    progress: 45,
-    status: '进行中',
-    lastUpdated: new Date().toLocaleDateString(),
-    files: DEMO_FILES,
-    graphData: DEMO_GRAPH,
-    learningPath: DEMO_PATH
-};
-
-// Demo results to populate Practice Page
-const DEMO_RESULTS: AssessmentResult[] = [
-    {
-        id: 'res-1',
-        kbId: DEMO_KB_ID,
-        nodeId: 'n1',
-        nodeLabel: 'React',
-        score: 95,
-        feedback: '定义非常准确。你正确地指出了它是一个用于构建 UI 的库。',
-        timestamp: Date.now() - 172800000, // 2 days ago
-        nextReviewDate: Date.now() + 86400000, // Tomorrow
-        interval: 3,
-        repetition: 2
-    },
-    {
-        id: 'res-2',
-        kbId: DEMO_KB_ID,
-        nodeId: 'n2',
-        nodeLabel: '组件 (Component)',
-        score: 45,
-        feedback: '你漏掉了关于它“独立封装”的关键点。',
-        timestamp: Date.now() - 86400000, // Yesterday
-        nextReviewDate: Date.now() - 1000, // Due NOW
-        interval: 0,
-        repetition: 1
-    }
-];
-
-interface StoredUser extends User {
-  password: string; // Plaintext for this demo requirement
-}
-
-// --- Auth ---
+// --- AUTH FUNCTIONS ---
 
 export const registerUser = (username: string, password: string, avatar?: string): User | null => {
-  const usersStr = localStorage.getItem(USERS_KEY);
-  const users: StoredUser[] = usersStr ? JSON.parse(usersStr) : [];
+    const usersStr = localStorage.getItem(USERS_KEY);
+    const users: User[] = usersStr ? JSON.parse(usersStr) : [];
 
-  if (users.find(u => u.username === username)) {
-    return null; // User exists
-  }
+    if (users.find(u => u.username === username)) {
+        return null; // User exists
+    }
 
-  const newUser: StoredUser = {
-    id: Date.now().toString(),
-    username,
-    password,
-    avatar
-  };
+    const newUser: User = {
+        id: 'user-' + Date.now(),
+        username,
+        avatar
+    };
 
-  users.push(newUser);
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  
-  // Return public user object (without password)
-  return { id: newUser.id, username: newUser.username, avatar: newUser.avatar };
+    // In a real app, store password hash. Here we act as if we did auth.
+    // For local demo, we just store the user object.
+    users.push(newUser);
+    localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    
+    // Initialize with Demo Data
+    const initialKb: KnowledgeBase = {
+        id: DEMO_KB_ID,
+        title: 'React 基础',
+        description: 'React 核心概念入门指南。',
+        tag: 'Frontend',
+        progress: 35,
+        status: '进行中',
+        lastUpdated: new Date().toLocaleDateString(),
+        files: DEMO_FILES,
+        graphData: DEMO_GRAPH,
+        learningPath: DEMO_PATH
+    };
+    saveUserData(newUser.id, [initialKb]);
+
+    return newUser;
 };
 
 export const loginUser = (username: string, password: string): User | null => {
-  const usersStr = localStorage.getItem(USERS_KEY);
-  const users: StoredUser[] = usersStr ? JSON.parse(usersStr) : [];
-  
-  const user = users.find(u => u.username === username && u.password === password);
-  if (user) {
-    return { id: user.id, username: user.username, avatar: user.avatar };
-  }
-  return null;
+    const usersStr = localStorage.getItem(USERS_KEY);
+    const users: User[] = usersStr ? JSON.parse(usersStr) : [];
+    return users.find(u => u.username === username) || null;
 };
 
-// --- Data Persistence (Knowledge Bases) ---
+// --- DATA FUNCTIONS ---
 
 export const getUserData = (userId: string): KnowledgeBase[] => {
-  const data = localStorage.getItem(DATA_PREFIX + userId);
-  
-  // Inject Demo Data if empty
-  if (!data || JSON.parse(data).length === 0) {
-      const seed = [DEMO_KB];
-      saveUserData(userId, seed);
-      return seed;
-  }
-  
-  return JSON.parse(data);
+    const key = DATA_PREFIX + userId;
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : [];
 };
 
-export const saveUserData = (userId: string, bases: KnowledgeBase[]) => {
-  localStorage.setItem(DATA_PREFIX + userId, JSON.stringify(bases));
+export const saveUserData = (userId: string, data: KnowledgeBase[]) => {
+    const key = DATA_PREFIX + userId;
+    localStorage.setItem(key, JSON.stringify(data));
 };
-
-// --- Assessment Results (SRS State) ---
 
 export const getAssessmentResults = (userId: string): AssessmentResult[] => {
-  const data = localStorage.getItem(RESULTS_PREFIX + userId);
-  
-  // Inject Demo Results if empty
-  if (!data) {
-      localStorage.setItem(RESULTS_PREFIX + userId, JSON.stringify(DEMO_RESULTS));
-      return DEMO_RESULTS;
-  }
-
-  return JSON.parse(data);
+    const key = RESULTS_PREFIX + userId;
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : [];
 };
 
 export const saveAssessmentResult = (userId: string, result: AssessmentResult) => {
-  const results = getAssessmentResults(userId);
-  // Keep only the LATEST result for this node (replace old one) to manage SRS state
-  const filtered = results.filter(r => r.nodeId !== result.nodeId);
-  filtered.push(result);
-  localStorage.setItem(RESULTS_PREFIX + userId, JSON.stringify(filtered));
+    const key = RESULTS_PREFIX + userId;
+    const existing = getAssessmentResults(userId);
+    // Remove old result for this specific node if exists (keep only latest for SRS)
+    const filtered = existing.filter(r => r.nodeId !== result.nodeId);
+    filtered.push(result);
+    localStorage.setItem(key, JSON.stringify(filtered));
 };
 
-// --- Assessment History (Full Logs) ---
-
 export const getAssessmentHistory = (userId: string): AssessmentHistoryLog[] => {
-  const data = localStorage.getItem(HISTORY_PREFIX + userId);
-  return data ? JSON.parse(data) : [];
+    const key = HISTORY_PREFIX + userId;
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : [];
 };
 
 export const saveAssessmentHistory = (userId: string, log: AssessmentHistoryLog) => {
-  const history = getAssessmentHistory(userId);
-  history.push(log); // Append to end, keeping all records
-  localStorage.setItem(HISTORY_PREFIX + userId, JSON.stringify(history));
+    const key = HISTORY_PREFIX + userId;
+    const existing = getAssessmentHistory(userId);
+    existing.push(log);
+    localStorage.setItem(key, JSON.stringify(existing));
 };
 
-// --- Mastery Logic ---
-// Returns 'mastered' (>=85), 'passing' (>=60), or 'learning' (<60 or none)
-export const getNodeMasteryStatus = (userId: string, nodeId: string): 'mastered' | 'passing' | 'learning' => {
-    const results = getAssessmentResults(userId);
-    const result = results.find(r => r.nodeId === nodeId);
-    
-    if (!result) return 'learning';
-    if (result.score >= 85) return 'mastered';
-    if (result.score >= 60) return 'passing';
-    return 'learning';
-};
+// --- AI INSIGHTS PERSISTENCE ---
 
-// --- Simple SM-2 inspired SRS Algorithm ---
-export const calculateSRS = (previousResult: AssessmentResult | undefined, score: number) => {
-  // Score 0-100. We consider >= 60 "Passing".
-  
-  if (!previousResult) {
-    // New item
-    return {
-      interval: score >= 60 ? 1 : 0, // 1 day if passed, 0 if failed
-      repetition: score >= 60 ? 1 : 0,
-      nextReviewDate: Date.now() + (score >= 60 ? 24 * 60 * 60 * 1000 : 0)
-    };
-  }
-
-  if (score < 60) {
-    // Failed: Reset
-    return {
-      interval: 0,
-      repetition: 0,
-      nextReviewDate: Date.now()
-    };
-  }
-
-  // Passed: Increase interval
-  // Multiplier: 80+ -> 2.5x, 60+ -> 1.5x
-  const multiplier = score >= 85 ? 2.5 : 1.5;
-  let newInterval = Math.ceil(previousResult.interval * multiplier);
-  if (newInterval === 0) newInterval = 1;
-
-  return {
-    interval: newInterval,
-    repetition: previousResult.repetition + 1,
-    nextReviewDate: Date.now() + (newInterval * 24 * 60 * 60 * 1000)
-  };
-};
-
-// --- Backup & Restore (JSON File) ---
-
-export const createBackupJSON = (): string => {
-  const usersStr = localStorage.getItem(USERS_KEY);
-  const users: StoredUser[] = usersStr ? JSON.parse(usersStr) : [];
-  
-  const backupData: any = {
-    timestamp: new Date().toISOString(),
-    users: users,
-    userData: {},
-    resultsData: {},
-    historyData: {}
-  };
-
-  users.forEach(user => {
-    const key = DATA_PREFIX + user.id;
+export const getAiInsights = (userId: string): AiInsightsData | null => {
+    const key = INSIGHTS_PREFIX + userId;
     const data = localStorage.getItem(key);
-    if (data) {
-      backupData.userData[user.id] = JSON.parse(data);
-    }
-    
-    const resultsKey = RESULTS_PREFIX + user.id;
-    const results = localStorage.getItem(resultsKey);
-    if (results) {
-        backupData.resultsData[user.id] = JSON.parse(results);
-    }
-
-    const historyKey = HISTORY_PREFIX + user.id;
-    const history = localStorage.getItem(historyKey);
-    if (history) {
-        backupData.historyData[user.id] = JSON.parse(history);
-    }
-  });
-
-  return JSON.stringify(backupData, null, 2);
+    return data ? JSON.parse(data) : null;
 };
 
-export const restoreBackupJSON = (jsonString: string): boolean => {
-  try {
-    const backup = JSON.parse(jsonString);
+export const saveAiInsights = (userId: string, data: AiInsightsData) => {
+    const key = INSIGHTS_PREFIX + userId;
+    localStorage.setItem(key, JSON.stringify(data));
+};
+
+// --- MODEL CONFIGURATION ---
+
+export const getModelConfig = (): ModelConfig => {
+    const stored = localStorage.getItem(MODEL_CONFIG_KEY);
+    if (stored) {
+        return JSON.parse(stored);
+    }
+    // Default Config
+    return {
+        modelName: 'gemini-3-flash-preview',
+        baseUrl: '',
+        apiKey: ''
+    };
+};
+
+export const saveModelConfig = (config: ModelConfig) => {
+    localStorage.setItem(MODEL_CONFIG_KEY, JSON.stringify(config));
+};
+
+// --- SRS LOGIC (Simplified SM-2) ---
+export const calculateSRS = (prevResult: AssessmentResult | undefined, currentScore: number) => {
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
     
-    // Restore Users
-    if (Array.isArray(backup.users)) {
-      localStorage.setItem(USERS_KEY, JSON.stringify(backup.users));
+    let interval = 1; // Default 1 day
+    let repetition = 0;
+
+    if (prevResult) {
+        interval = prevResult.interval;
+        repetition = prevResult.repetition;
     }
 
-    // Restore User Data
-    if (backup.userData && typeof backup.userData === 'object') {
-      Object.keys(backup.userData).forEach(userId => {
-        localStorage.setItem(DATA_PREFIX + userId, JSON.stringify(backup.userData[userId]));
-      });
+    if (currentScore < 60) {
+        // Reset
+        repetition = 0;
+        interval = 0; // Review immediately/tomorrow
+    } else {
+        repetition += 1;
+        if (repetition === 1) {
+            interval = 1;
+        } else if (repetition === 2) {
+            interval = 3;
+        } else {
+            // Factor based on performance
+            const factor = currentScore >= 85 ? 2.5 : 1.5;
+            interval = Math.ceil(interval * factor);
+        }
     }
 
-    // Restore Results
-    if (backup.resultsData && typeof backup.resultsData === 'object') {
-        Object.keys(backup.resultsData).forEach(userId => {
-          localStorage.setItem(RESULTS_PREFIX + userId, JSON.stringify(backup.resultsData[userId]));
+    return {
+        interval: interval,
+        repetition: repetition,
+        nextReviewDate: now + (interval * oneDay)
+    };
+};
+
+// --- BACKUP ---
+export const createBackupJSON = () => {
+    const data: any = {};
+    Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('learn_copilot_')) {
+            data[key] = localStorage.getItem(key);
+        }
+    });
+    return JSON.stringify(data);
+};
+
+export const restoreBackupJSON = (jsonString: string) => {
+    try {
+        const data = JSON.parse(jsonString);
+        Object.keys(data).forEach(key => {
+            if (key.startsWith('learn_copilot_')) {
+                localStorage.setItem(key, data[key]);
+            }
         });
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
     }
-
-    // Restore History
-    if (backup.historyData && typeof backup.historyData === 'object') {
-        Object.keys(backup.historyData).forEach(userId => {
-          localStorage.setItem(HISTORY_PREFIX + userId, JSON.stringify(backup.historyData[userId]));
-        });
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Failed to restore backup:", error);
-    return false;
-  }
 };

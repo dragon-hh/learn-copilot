@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { generateAIContent, Type } from '../utils/ai';
 import { GraphData, KnowledgeBase, KnowledgeFile, FileType } from '../types';
 import { getUserData, saveUserData } from '../utils/storage';
+import { getPrompt, PromptKey } from '../utils/prompts';
 
 interface LibraryProps {
   userId: string;
@@ -194,57 +195,48 @@ export const Library: React.FC<LibraryProps> = ({ userId }) => {
       setIsGenerating(true);
 
       const combinedText = activeBase.files.map(f => `--- FILE: ${f.name} ---\n${f.content || ''}`).join('\n\n');
+      const promptTemplate = getPrompt(PromptKey.GENERATE_GRAPH);
+      const fullPrompt = `${promptTemplate}\n\nMaterials:\n${combinedText.substring(0, 30000)}`;
 
-      try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: `Analyze the following learning materials and generate a knowledge graph structure in Chinese.
-              Identify key concepts as nodes (with x,y coordinates for a 800x600 canvas layout) and their relationships as edges.
-              Use Chinese for all 'label' fields.
-              
-              Materials:
-              ${combinedText.substring(0, 30000)}`,
-              config: {
-                  responseMimeType: "application/json",
-                  responseSchema: {
+      const graphSchema = {
+          type: Type.OBJECT,
+          properties: {
+              nodes: {
+                  type: Type.ARRAY,
+                  items: {
                       type: Type.OBJECT,
                       properties: {
-                          nodes: {
-                              type: Type.ARRAY,
-                              items: {
-                                  type: Type.OBJECT,
-                                  properties: {
-                                      id: { type: Type.STRING },
-                                      label: { type: Type.STRING, description: "Name of the concept in Chinese" },
-                                      type: { type: Type.STRING, enum: ['concept', 'fact', 'example'] },
-                                      x: { type: Type.NUMBER, description: "X coordinate between 50 and 750" },
-                                      y: { type: Type.NUMBER, description: "Y coordinate between 50 and 550" }
-                                  },
-                                  required: ['id', 'label', 'type', 'x', 'y']
-                              }
-                          },
-                          edges: {
-                              type: Type.ARRAY,
-                              items: {
-                                  type: Type.OBJECT,
-                                  properties: {
-                                      source: { type: Type.STRING },
-                                      target: { type: Type.STRING },
-                                      label: { type: Type.STRING, description: "Relationship description in Chinese" }
-                                  },
-                                  required: ['source', 'target']
-                              }
-                          },
-                          topic: { type: Type.STRING, description: "Main topic in Chinese" }
+                          id: { type: Type.STRING },
+                          label: { type: Type.STRING, description: "Name of the concept in Chinese" },
+                          type: { type: Type.STRING, enum: ['concept', 'fact', 'example'] },
+                          x: { type: Type.NUMBER, description: "X coordinate between 50 and 750" },
+                          y: { type: Type.NUMBER, description: "Y coordinate between 50 and 550" }
                       },
-                      required: ['nodes', 'edges', 'topic']
+                      required: ['id', 'label', 'type', 'x', 'y']
                   }
-              }
-          });
+              },
+              edges: {
+                  type: Type.ARRAY,
+                  items: {
+                      type: Type.OBJECT,
+                      properties: {
+                          source: { type: Type.STRING },
+                          target: { type: Type.STRING },
+                          label: { type: Type.STRING, description: "Relationship description in Chinese" }
+                      },
+                      required: ['source', 'target']
+                  }
+              },
+              topic: { type: Type.STRING, description: "Main topic in Chinese" }
+          },
+          required: ['nodes', 'edges', 'topic']
+      };
 
-          if (response.text) {
-             const graphData = JSON.parse(response.text) as GraphData;
+      try {
+          const text = await generateAIContent(fullPrompt, graphSchema);
+
+          if (text) {
+             const graphData = JSON.parse(text) as GraphData;
              
              // Persist generated graph
              const updatedBase = {
@@ -254,12 +246,10 @@ export const Library: React.FC<LibraryProps> = ({ userId }) => {
              };
              const newBases = bases.map(b => b.id === updatedBase.id ? updatedBase : b);
              updateBases(newBases);
-             
-             // Optional: Navigate to Graph view? For now, we stay here to show success
           }
       } catch (error) {
           console.error("Generation failed", error);
-          alert("生成图谱失败，请检查 API Key 或重试。");
+          alert(`生成图谱失败: ${error}`);
       } finally {
           setIsGenerating(false);
       }

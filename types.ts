@@ -5,7 +5,8 @@ export enum View {
   ANALYTICS = 'analytics',
   PATH = 'path',
   PRACTICE = 'practice',
-  ABOUT = 'about'
+  ABOUT = 'about',
+  SETTINGS = 'settings'
 }
 
 export interface NavItem {

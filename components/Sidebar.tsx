@@ -135,15 +135,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, cur
           <span className="hidden lg:block text-sm font-medium">退出登录</span>
         </button>
         
-        <div className="mt-2 flex items-center gap-3 px-2 lg:px-3 justify-center lg:justify-start">
-          <div className="size-8 rounded-full bg-slate-200 overflow-hidden border border-slate-300 flex-shrink-0">
+        <button 
+            onClick={() => onViewChange(View.SETTINGS)}
+            className="mt-2 flex items-center gap-3 px-2 lg:px-3 justify-center lg:justify-start hover:bg-slate-50 rounded-xl py-2 transition-colors text-left w-full group"
+        >
+          <div className="size-8 rounded-full bg-slate-200 overflow-hidden border border-slate-300 flex-shrink-0 group-hover:border-primary transition-colors">
              <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
           </div>
           <div className="hidden lg:flex flex-col overflow-hidden">
-            <span className="text-xs font-bold text-slate-700 truncate">{currentUser.username}</span>
-            <span className="text-[10px] text-slate-400">免费版</span>
+            <span className="text-xs font-bold text-slate-700 truncate group-hover:text-primary">{currentUser.username}</span>
+            <span className="text-[10px] text-slate-400">点击配置系统</span>
           </div>
-        </div>
+        </button>
       </div>
     </aside>
   );

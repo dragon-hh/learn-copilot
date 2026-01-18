@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { generateAIContent, Type } from '../utils/ai';
 import { AssessmentContextType } from '../App';
-import { getUserData, saveAssessmentResult, saveAssessmentHistory, calculateSRS, getAssessmentResults } from '../utils/storage';
-import { KnowledgeBase } from '../types';
+import { getUserData, saveAssessmentResult, saveAssessmentHistory, calculateSRS, getAssessmentResults, getAssessmentHistory } from '../utils/storage';
+import { KnowledgeBase, AssessmentHistoryLog } from '../types';
+import { getPrompt, PromptKey } from '../utils/prompts';
 
 interface AssessmentProps {
     userId: string;
@@ -10,7 +11,32 @@ interface AssessmentProps {
     onNextNode: (kbId: string, nodeId: string, nodeLabel: string) => void;
 }
 
+// Sub-component for Score Display
+const ScoreCard: React.FC<{ score: number }> = ({ score }) => {
+    let colorClass = 'text-red-600 bg-red-50 border-red-100';
+    let label = '需加强';
+    
+    if (score >= 85) {
+        colorClass = 'text-amber-600 bg-amber-50 border-amber-100';
+        label = '已精通';
+    } else if (score >= 60) {
+        colorClass = 'text-emerald-600 bg-emerald-50 border-emerald-100';
+        label = '及格';
+    }
+
+    return (
+        <div className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 ${colorClass} min-w-[120px]`}>
+            <span className="text-4xl font-black font-display mb-1">{score}</span>
+            <span className="text-xs font-bold uppercase tracking-wider opacity-80">{label}</span>
+        </div>
+    );
+};
+
 export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextNode }) => {
+    // Mode: 'active' (taking test), 'list' (history), 'detail' (viewing history)
+    const [viewMode, setViewMode] = useState<'active' | 'list' | 'detail'>('list');
+    
+    // Active Assessment State
     const [isLoading, setIsLoading] = useState(false);
     const [question, setQuestion] = useState<string | null>(null);
     const [userAnswer, setUserAnswer] = useState('');
@@ -18,7 +44,22 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
     const [kb, setKb] = useState<KnowledgeBase | null>(null);
     const [nextNode, setNextNode] = useState<{id: string, label: string} | null>(null);
 
-    // Initial Load & Generation logic wrapped in useCallback
+    // History List State
+    const [historyList, setHistoryList] = useState<AssessmentHistoryLog[]>([]);
+    const [selectedLog, setSelectedLog] = useState<AssessmentHistoryLog | null>(null);
+
+    // --- EFFECT: Handle Context Switching ---
+    useEffect(() => {
+        if (context) {
+            setViewMode('active');
+            loadAndGenerate();
+        } else {
+            setViewMode('list');
+            setHistoryList(getAssessmentHistory(userId).reverse()); // Newest first
+        }
+    }, [context, userId]);
+
+    // --- LOGIC: Active Assessment ---
     const loadAndGenerate = useCallback(async () => {
         if (!context) return;
         
@@ -36,7 +77,6 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
         if (foundKb) {
             // Calculate Next Node logic
             if (foundKb.learningPath && foundKb.graphData) {
-                // Flatten all nodes in the path modules in order
                 const orderedNodeIds: string[] = [];
                 foundKb.learningPath.modules.forEach(m => {
                     orderedNodeIds.push(...m.nodeIds);
@@ -57,33 +97,20 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
         setIsLoading(false);
     }, [context, userId]);
 
-    // Effect to trigger load on context change
-    useEffect(() => {
-        loadAndGenerate();
-    }, [loadAndGenerate]);
-
     const generateQuestion = async (base: KnowledgeBase, topic: string) => {
-        // Concatenate first 20k chars of content for context
         const contextText = base.files.map(f => f.content).join('\n').substring(0, 20000);
+        let promptTemplate = getPrompt(PromptKey.GENERATE_QUESTION);
+        promptTemplate = promptTemplate.replace('{{topic}}', topic);
+        promptTemplate = promptTemplate.replace('{{context}}', contextText);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: `Generate a single, specific active recall question about the concept "${topic}" based on the text below. 
-                Do not provide the answer. Make it thought-provoking.
-                IMPORTANT: Generate the question in Chinese (Simplified).
-                
-                Context:
-                ${contextText}`
-            });
-            
-            if (response.text) {
-                setQuestion(response.text);
+            const text = await generateAIContent(promptTemplate);
+            if (text) {
+                setQuestion(text);
             }
         } catch (e) {
             console.error(e);
-            setQuestion("生成问题失败，请检查 API Key 或网络连接。");
+            setQuestion("生成问题失败，请检查设置中的模型配置。");
         }
     };
 
@@ -92,41 +119,32 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
         setIsLoading(true);
 
         const contextText = kb.files.map(f => f.content).join('\n').substring(0, 20000);
+        let promptTemplate = getPrompt(PromptKey.EVALUATE_ANSWER);
+        promptTemplate = promptTemplate.replace('{{context}}', contextText);
+        promptTemplate = promptTemplate.replace('{{question}}', question);
+        promptTemplate = promptTemplate.replace('{{userAnswer}}', userAnswer);
+
+        const gradingSchema = {
+            type: Type.OBJECT,
+            properties: {
+                score: { type: Type.NUMBER, description: "Score from 0 to 100" },
+                feedback: { type: Type.STRING, description: "Constructive feedback in Chinese explaining what was right or wrong." }
+            },
+            required: ['score', 'feedback']
+        };
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: `Evaluate the user's answer to the question based on the provided context.
-                IMPORTANT: Provide the feedback in Chinese (Simplified).
-                
-                Context: ${contextText}
-                Question: ${question}
-                User Answer: ${userAnswer}
-                `,
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: Type.OBJECT,
-                        properties: {
-                            score: { type: Type.NUMBER, description: "Score from 0 to 100" },
-                            feedback: { type: Type.STRING, description: "Constructive feedback in Chinese explaining what was right or wrong." }
-                        },
-                        required: ['score', 'feedback']
-                    }
-                }
-            });
+            const text = await generateAIContent(promptTemplate, gradingSchema);
 
-            if (response.text) {
-                const result = JSON.parse(response.text);
+            if (text) {
+                const result = JSON.parse(text);
                 setGrade(result);
 
-                // 1. Calculate SRS Logic
+                // Save Logic
                 const prevResults = getAssessmentResults(userId);
                 const prevResult = prevResults.find(r => r.nodeId === context.nodeId);
                 const srsData = calculateSRS(prevResult, result.score);
 
-                // 2. Save Current SRS State (for Practice queue)
                 saveAssessmentResult(userId, {
                     id: Date.now().toString(),
                     kbId: context.kbId,
@@ -138,7 +156,6 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
                     ...srsData
                 });
 
-                // 3. Save Persistent History Log (for Audit/Analytics)
                 saveAssessmentHistory(userId, {
                     id: Date.now().toString(),
                     userId: userId,
@@ -154,38 +171,123 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
             }
         } catch (e) {
             console.error(e);
-            alert("评分失败。");
+            alert("评分失败，请检查模型配置或网络。");
         } finally {
             setIsLoading(false);
         }
     };
 
     const handleTryAgain = () => {
-        // Reset local state to allow re-taking without page reload
         setGrade(null);
         setUserAnswer('');
         setQuestion(null);
-        // Re-trigger generation
         if (kb && context) {
             setIsLoading(true);
             generateQuestion(kb, context.nodeLabel).then(() => setIsLoading(false));
         }
     };
 
-    const handleNext = () => {
-        if (context && nextNode) {
-            onNextNode(context.kbId, nextNode.id, nextNode.label);
-        }
-    };
-
-    if (!context) {
+    // --- VIEW: History List ---
+    if (viewMode === 'list') {
         return (
-            <div className="flex flex-col items-center justify-center h-screen text-slate-400 animate-fade-in-up">
-                <span className="material-symbols-outlined text-4xl mb-2">quiz</span>
-                <p>请从图谱或学习路径中选择一个节点开始测试。</p>
+            <div className="max-w-5xl mx-auto p-8 animate-fade-in-up h-screen overflow-y-auto">
+                <header className="mb-8">
+                    <h1 className="text-3xl font-black text-slate-900 font-display">智能测试记录</h1>
+                    <p className="text-slate-500 mt-2">查看您的过往测试详情和 AI 反馈。</p>
+                </header>
+
+                {historyList.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-200 shadow-sm text-center">
+                        <span className="material-symbols-outlined text-4xl text-slate-300 mb-4">history_edu</span>
+                        <h3 className="text-lg font-bold text-slate-900">暂无测试记录</h3>
+                        <p className="text-slate-500 text-sm mt-1">请从“知识图谱”或“学习路径”开始新的测试。</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                        {historyList.map(log => (
+                            <div 
+                                key={log.id} 
+                                onClick={() => { setSelectedLog(log); setViewMode('detail'); }}
+                                className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-primary/50 cursor-pointer transition-all group flex items-center justify-between"
+                            >
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-slate-400">{new Date(log.timestamp).toLocaleDateString()}</span>
+                                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                        <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">{log.nodeLabel}</span>
+                                    </div>
+                                    <p className="text-slate-800 font-medium line-clamp-1">{log.question}</p>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <div className={`text-lg font-black font-display ${log.score >= 60 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                        {log.score}分
+                                    </div>
+                                    <span className="material-symbols-outlined text-slate-300 group-hover:text-primary transition-colors">chevron_right</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         );
     }
+
+    // --- VIEW: Detail Log ---
+    if (viewMode === 'detail' && selectedLog) {
+        return (
+            <div className="max-w-4xl mx-auto p-8 animate-fade-in-up h-screen overflow-y-auto">
+                <button 
+                    onClick={() => setViewMode('list')}
+                    className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-900 font-bold text-sm transition-colors"
+                >
+                    <span className="material-symbols-outlined text-lg">arrow_back</span> 返回列表
+                </button>
+                
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
+                    <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
+                        <div>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">测试主题</span>
+                            <h1 className="text-2xl font-black text-slate-900 mt-1">{selectedLog.nodeLabel}</h1>
+                            <p className="text-xs text-slate-400 mt-2">{new Date(selectedLog.timestamp).toLocaleString()}</p>
+                        </div>
+                        <ScoreCard score={selectedLog.score} />
+                    </div>
+                    
+                    <div className="p-8 flex flex-col gap-8">
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-sm">psychology</span> AI 提问
+                            </h3>
+                            <div className="text-lg font-bold text-slate-800 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                {selectedLog.question}
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-sm">edit_note</span> 您的回答
+                            </h3>
+                            <div className="text-slate-700 leading-relaxed p-4 rounded-xl border border-slate-200 bg-white">
+                                {selectedLog.userAnswer}
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-sm">reviews</span> AI 详细反馈
+                            </h3>
+                            <div className="text-slate-700 leading-relaxed p-6 rounded-xl bg-primary/5 border border-primary/10">
+                                {selectedLog.feedback}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // --- VIEW: Active Assessment (Taking a test) ---
+    if (!context) return null; // Should be handled by effect, but safeguard
 
     return (
         <div className="flex flex-col min-h-screen bg-slate-50 animate-fade-in-up">
@@ -196,8 +298,8 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
                       <h1 className="text-lg font-bold leading-tight text-slate-900">{context.nodeLabel}</h1>
                    </div>
                    {grade && (
-                       <div className={`px-4 py-1 rounded-full text-sm font-bold ${grade.score >= 85 ? 'bg-amber-100 text-amber-700 border border-amber-200' : grade.score >= 60 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                           {grade.score >= 85 ? '已掌握!' : '得分: ' + grade.score}
+                       <div className="text-sm font-bold text-slate-500">
+                           {grade.score >= 60 ? '测试通过' : '未通过'}
                        </div>
                    )}
               </div>
@@ -222,7 +324,7 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
                     </div>
                  </div>
     
-                 {/* Input / Feedback Area */}
+                 {/* Input / Result Area */}
                  {!grade ? (
                      <div className="flex flex-col flex-grow bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden focus-within:ring-2 focus-within:ring-primary/50 transition-all">
                         <textarea 
@@ -244,27 +346,47 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
                         </div>
                      </div>
                  ) : (
-                     <div className={`rounded-2xl border p-8 shadow-sm ${grade.score >= 60 ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
-                         <h3 className={`text-lg font-bold mb-2 ${grade.score >= 60 ? 'text-emerald-800' : 'text-red-800'}`}>
-                             {grade.score >= 60 ? '做得不错！' : '仍需努力'}
-                         </h3>
-                         <p className="text-slate-700 leading-relaxed">{grade.feedback}</p>
-                         <div className="mt-6 flex flex-wrap gap-4">
-                             <button 
-                                onClick={handleTryAgain}
-                                className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:text-primary hover:border-primary transition-colors flex items-center gap-2"
-                             >
-                                 <span className="material-symbols-outlined">refresh</span> 再试一次
-                             </button>
-                             
-                             {nextNode && (
+                     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-fade-in-up">
+                         <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                             <div>
+                                 <h3 className={`text-xl font-bold mb-1 ${grade.score >= 60 ? 'text-emerald-800' : 'text-red-800'}`}>
+                                     {grade.score >= 60 ? '恭喜，挑战成功！' : '很遗憾，未能通过'}
+                                 </h3>
+                                 <p className="text-sm text-slate-500">查看下方的 AI 反馈以改进。</p>
+                             </div>
+                             <ScoreCard score={grade.score} />
+                         </div>
+                         
+                         <div className="p-8">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">AI 详细反馈</h4>
+                            <p className="text-slate-700 leading-relaxed p-4 bg-primary/5 rounded-xl border border-primary/10 mb-8">
+                                {grade.feedback}
+                            </p>
+
+                            <div className="flex flex-wrap gap-4 justify-end">
                                  <button 
-                                     onClick={handleNext}
-                                     className="px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center gap-2 ml-auto"
+                                    onClick={handleTryAgain}
+                                    className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:text-primary hover:border-primary transition-colors flex items-center gap-2"
                                  >
-                                     下一个知识点: {nextNode.label} <span className="material-symbols-outlined">arrow_forward</span>
+                                     <span className="material-symbols-outlined">refresh</span> 再试一次
                                  </button>
-                             )}
+                                 
+                                 {nextNode ? (
+                                     <button 
+                                         onClick={() => onNextNode(context.kbId, nextNode.id, nextNode.label)}
+                                         className="px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center gap-2"
+                                     >
+                                         下一个知识点: {nextNode.label} <span className="material-symbols-outlined">arrow_forward</span>
+                                     </button>
+                                 ) : (
+                                     <button 
+                                        onClick={() => setViewMode('list')}
+                                        className="px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold flex items-center gap-2"
+                                     >
+                                         完成 <span className="material-symbols-outlined">check</span>
+                                     </button>
+                                 )}
+                            </div>
                          </div>
                      </div>
                  )}

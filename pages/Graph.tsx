@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { generateAIContent } from '../utils/ai';
 import { GraphData, KnowledgeBase } from '../types';
 import { getUserData } from '../utils/storage';
+import { getPrompt, PromptKey } from '../utils/prompts';
 
 interface GraphProps {
     userId: string;
@@ -44,41 +45,32 @@ const GraphCanvas: React.FC<GraphViewProps> = ({ data, onBack }) => {
         setIsSending(true);
 
         // Construct context from graph data
-        const context = `
-        You are an AI assistant helping a user understand a Knowledge Graph about "${topic}".
-        
-        Graph Structure:
-        - Nodes: ${nodes.map(n => `${n.label} (${n.type})`).join(', ')}
-        - Connections: ${edges.map(e => {
+        let promptTemplate = getPrompt(PromptKey.CHAT_WITH_GRAPH);
+        promptTemplate = promptTemplate.replace('{{topic}}', topic);
+        promptTemplate = promptTemplate.replace('{{nodes}}', nodes.map(n => `${n.label} (${n.type})`).join(', '));
+        promptTemplate = promptTemplate.replace('{{edges}}', edges.map(e => {
             const src = nodes.find(n => n.id === e.source)?.label;
             const tgt = nodes.find(n => n.id === e.target)?.label;
             return `${src} --[${e.label}]--> ${tgt}`;
-        }).join(', ')}
-        
-        Answer the user's question based on this graph structure and your general knowledge about the topic.
-        IMPORTANT: ALWAYS answer in Chinese (Simplified).
-        Keep answers concise and helpful.
-        `;
+        }).join(', '));
 
-        try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: `
-                Context: ${context}
+        const fullPrompt = `
+                Context: ${promptTemplate}
                 
                 Chat History:
                 ${messages.map(m => `${m.role}: ${m.text}`).join('\n')}
                 
                 User: ${userMsg}
-                Model:`,
-            });
+                Model:`;
 
-            if (response.text) {
-                setMessages(prev => [...prev, { role: 'model', text: response.text || "无法生成回复。" }]);
+        try {
+            const text = await generateAIContent(fullPrompt);
+            if (text) {
+                setMessages(prev => [...prev, { role: 'model', text: text || "无法生成回复。" }]);
             }
         } catch (error) {
             setMessages(prev => [...prev, { role: 'model', text: "连接 AI 服务失败。" }]);
+            console.error(error);
         } finally {
             setIsSending(false);
         }
@@ -283,67 +275,60 @@ const GraphCanvas: React.FC<GraphViewProps> = ({ data, onBack }) => {
 };
 
 export const Graph: React.FC<GraphProps> = ({ userId }) => {
-    const [basesWithGraphs, setBasesWithGraphs] = useState<KnowledgeBase[]>([]);
+    const [bases, setBases] = useState<KnowledgeBase[]>([]);
     const [selectedBase, setSelectedBase] = useState<KnowledgeBase | null>(null);
 
     useEffect(() => {
-        const allBases = getUserData(userId);
-        setBasesWithGraphs(allBases.filter(b => b.graphData !== null && b.graphData !== undefined));
-    }, [userId, selectedBase]); // Re-fetch when selection clears to ensure updates
+        const data = getUserData(userId);
+        setBases(data);
+    }, [userId]);
 
     if (selectedBase && selectedBase.graphData) {
         return <GraphCanvas data={selectedBase.graphData} onBack={() => setSelectedBase(null)} />;
     }
 
     return (
-        <div className="max-w-7xl mx-auto p-6 md:p-10 lg:p-12 animate-fade-in-up">
+        <div className="max-w-7xl mx-auto p-8 animate-fade-in-up">
             <header className="mb-10">
-                <h2 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 font-display">知识图谱可视化</h2>
-                <p className="text-slate-500 text-lg max-w-xl mt-2">探索从您的知识库中生成的视觉结构。</p>
+                <h2 className="text-3xl font-black text-slate-900 font-display">知识图谱</h2>
+                <p className="text-slate-500 mt-2">可视化探索您的知识结构。</p>
             </header>
 
-            {basesWithGraphs.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-200 shadow-sm text-center">
-                    <div className="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center mb-6">
-                        <span className="material-symbols-outlined text-4xl text-slate-300">hub</span>
-                    </div>
-                    <h3 className="text-xl font-bold text-slate-900 mb-2">暂无可用图谱</h3>
-                    <p className="text-slate-500 max-w-sm mb-6">请先在知识库中创建内容并点击“生成图谱”。</p>
-                    <button disabled className="px-6 py-3 bg-slate-100 text-slate-400 font-bold rounded-xl cursor-not-allowed">
-                        请前往知识库
-                    </button>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {basesWithGraphs.map(base => (
-                        <div 
-                            key={base.id}
-                            onClick={() => setSelectedBase(base)}
-                            className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer overflow-hidden group"
-                        >
-                            <div className="h-40 bg-slate-100 relative flex items-center justify-center overflow-hidden">
-                                <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#64748b 1px, transparent 1px)', backgroundSize: '12px 12px' }}></div>
-                                <span className="material-symbols-outlined text-6xl text-slate-300 group-hover:text-primary transition-colors">account_tree</span>
-                                <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-slate-500 shadow-sm border border-slate-200">
-                                    {base.graphData?.nodes.length} 节点
-                                </div>
-                            </div>
-                            <div className="p-6">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded">
-                                        {base.tag}
-                                    </span>
-                                </div>
-                                <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-primary transition-colors">{base.title}</h3>
-                                <p className="text-sm text-slate-500 mb-4 line-clamp-2">{base.description}</p>
-                                <div className="flex items-center text-xs font-bold text-primary group-hover:underline">
-                                    打开可视化视图 <span className="material-symbols-outlined text-sm ml-1">arrow_forward</span>
-                                </div>
-                            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {bases.map(base => (
+                    <div 
+                        key={base.id}
+                        onClick={() => {
+                            if (base.graphData) {
+                                setSelectedBase(base);
+                            }
+                        }}
+                        className={`bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition-all group ${base.graphData ? 'cursor-pointer hover:border-primary hover:shadow-md' : 'opacity-60 cursor-not-allowed'}`}
+                    >
+                         <div className="flex justify-between items-start mb-4">
+                            <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">{base.tag}</span>
+                            {base.graphData ? (
+                                <span className="text-emerald-500 material-symbols-outlined">hub</span>
+                            ) : (
+                                <span className="text-slate-300 material-symbols-outlined">hub</span>
+                            )}
                         </div>
-                    ))}
-                </div>
-            )}
+                        <h3 className="text-xl font-bold text-slate-900 group-hover:text-primary transition-colors">{base.title}</h3>
+                        <p className="text-sm text-slate-500 mt-2 line-clamp-2">{base.description}</p>
+                        
+                        <div className="mt-6 pt-4 border-t border-slate-100 flex items-center text-xs font-bold text-slate-400">
+                             {base.graphData ? '进入图谱' : '未生成 (请在知识库生成)'} 
+                             <span className="material-symbols-outlined text-sm ml-auto">arrow_forward</span>
+                        </div>
+                    </div>
+                ))}
+                {bases.length === 0 && (
+                     <div className="col-span-full py-12 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-2xl">
+                        <span className="material-symbols-outlined text-4xl mb-2 opacity-50">hub</span>
+                        <p>暂无知识库。请先在“知识库”中创建。</p>
+                     </div>
+                )}
+            </div>
         </div>
     );
 };

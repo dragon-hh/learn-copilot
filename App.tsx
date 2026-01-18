@@ -8,6 +8,7 @@ import { Analytics } from './pages/Analytics';
 import { Practice } from './pages/Practice';
 import { LearningPath } from './pages/LearningPath';
 import { About } from './pages/About';
+import { Settings } from './pages/Settings';
 import { Auth } from './pages/Auth';
 
 export interface AssessmentContextType {
@@ -26,9 +27,21 @@ const App: React.FC = () => {
     setCurrentView(View.LIBRARY); // Reset view on logout
   };
 
+  const handleViewChange = (view: View) => {
+      // If user clicks "Assessment" in sidebar, clear context to show History List
+      if (view === View.ASSESSMENT) {
+          setAssessmentContext(null);
+      }
+      setCurrentView(view);
+  };
+
   const handleStartAssessment = (kbId: string, nodeId: string, nodeLabel: string) => {
       setAssessmentContext({ kbId, nodeId, nodeLabel });
       setCurrentView(View.ASSESSMENT);
+  };
+
+  const handleUpdateUser = (updatedUser: User) => {
+      setCurrentUser(updatedUser);
   };
   
   if (!currentUser) {
@@ -55,6 +68,8 @@ const App: React.FC = () => {
         return <LearningPath userId={currentUser.id} onStartAssessment={handleStartAssessment} />;
       case View.ABOUT:
         return <About />;
+      case View.SETTINGS:
+        return <Settings currentUser={currentUser} onUpdateUser={handleUpdateUser} />;
       default:
         return <Library userId={currentUser.id} />;
     }
@@ -64,7 +79,7 @@ const App: React.FC = () => {
     <div className="flex bg-background-light min-h-screen text-text-main">
       <Sidebar 
         currentView={currentView} 
-        onViewChange={setCurrentView} 
+        onViewChange={handleViewChange} 
         currentUser={currentUser}
         onLogout={handleLogout}
       />
