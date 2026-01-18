@@ -294,7 +294,8 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
                             保存配置
                         </button>
                     </div>
-                    <div className="h-10"></div>
+                    {/* Increased spacer to ensure footer doesn't cover content at the bottom */}
+                    <div className="h-1"></div>
                 </div>
             )}
         </div>
