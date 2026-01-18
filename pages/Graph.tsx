@@ -68,8 +68,8 @@ const GraphCanvas: React.FC<GraphViewProps> = ({ data, onBack }) => {
             if (text) {
                 setMessages(prev => [...prev, { role: 'model', text: text || "无法生成回复。" }]);
             }
-        } catch (error) {
-            setMessages(prev => [...prev, { role: 'model', text: "连接 AI 服务失败。" }]);
+        } catch (error: any) {
+            setMessages(prev => [...prev, { role: 'model', text: `连接 AI 服务失败: ${error.message || "未知错误"}` }]);
             console.error(error);
         } finally {
             setIsSending(false);

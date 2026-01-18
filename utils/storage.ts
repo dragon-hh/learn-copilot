@@ -17,6 +17,7 @@ export interface ModelConfig {
     modelName: string; // e.g., 'gemini-3-flash-preview', 'deepseek-chat'
     baseUrl?: string; // Optional custom endpoint
     apiKey?: string; // User provided key
+    corsProxy?: string; // Optional CORS proxy URL
 }
 
 // --- DEMO DATA CONSTANTS (CHINESE) ---

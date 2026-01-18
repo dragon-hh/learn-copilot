@@ -267,6 +267,18 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
                             <p className="text-[10px] text-slate-400 mt-1">您的 Key 仅存储在本地浏览器中。</p>
                         </div>
 
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">CORS Proxy (Optional)</label>
+                            <input 
+                                type="text" 
+                                value={modelConfig.corsProxy || ''}
+                                onChange={(e) => setModelConfig({...modelConfig, corsProxy: e.target.value})}
+                                placeholder="例如: https://cors-anywhere.herokuapp.com/"
+                                className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all font-mono text-sm"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">用于解决浏览器直接请求第三方 API 时的跨域问题。</p>
+                        </div>
+
                         <div className="pt-4">
                             <button 
                                 onClick={handleSaveModelConfig}

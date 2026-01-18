@@ -31,7 +31,7 @@ export const generateAIContent = async (
         return response.text || "";
     }
 
-    // --- STRATEGY: OPENAI COMPATIBLE (DeepSeek, gim4.7, etc) ---
+    // --- STRATEGY: OPENAI COMPATIBLE (DeepSeek, NVIDIA NIM, vLLM, etc) ---
     else {
         // Default endpoints if not provided
         let baseUrl = config.baseUrl;
@@ -39,62 +39,106 @@ export const generateAIContent = async (
             if (config.modelName.includes('deepseek')) {
                 baseUrl = 'https://api.deepseek.com';
             } else {
-                // Fallback or assume user provided URL for 'gim4.7'
+                // Fallback for generic custom
                 baseUrl = 'https://api.openai.com/v1'; 
             }
         }
         
-        // Ensure /v1/chat/completions is usually appended if base is just the domain, 
-        // but often users put the full path. We'll do a simple check.
-        // For robustness, let's assume the user puts the base domain or we append standard path.
-        // If the user inputs "https://api.deepseek.com", we append "/chat/completions".
+        // Robust URL Construction
         let endpoint = baseUrl;
+        // 1. Remove trailing slash
+        if (endpoint.endsWith('/')) {
+            endpoint = endpoint.slice(0, -1);
+        }
+        // 2. Append /chat/completions ONLY if not already present
         if (!endpoint.endsWith('/chat/completions')) {
-            // Remove trailing slash if present
-            if (endpoint.endsWith('/')) endpoint = endpoint.slice(0, -1);
-            // Append standard path if it looks like a base domain
-            if (!endpoint.includes('/chat/completions')) {
-                 endpoint += '/chat/completions';
-            }
+             endpoint += '/chat/completions';
         }
 
-        // For non-Gemini models, we cannot send the Google `Type` schema object directly.
-        // We must instruct the model to return JSON in the system prompt or user prompt.
+        // 3. Prepend CORS Proxy if configured
+        let finalUrl = endpoint;
+        if (config.corsProxy) {
+            finalUrl = config.corsProxy + endpoint;
+        }
+
+        console.log(`[AI] Requesting: ${finalUrl} | Model: ${config.modelName}`);
+
         let finalPrompt = prompt;
         let responseFormat: any = undefined;
 
         if (schema) {
-            finalPrompt += `\n\nIMPORTANT: Provide your response in valid JSON format.`;
-            // DeepSeek supports response_format: { type: 'json_object' }
-            responseFormat = { type: "json_object" };
+            finalPrompt += `\n\nIMPORTANT: Provide your response in valid JSON format. Do not use Markdown code blocks (like \`\`\`json). Just return the raw JSON string.`;
             
-            // We should also try to describe the schema in text since we can't pass the object easily
-            // Simplified approach: The prompts in prompts.ts already describe the structure fairly well.
+            // NOTE: Only enable response_format for providers known to support it strictly.
+            if (config.modelName === 'deepseek-chat' || config.modelName === 'deepseek-reasoner') {
+                 responseFormat = { type: "json_object" };
+            }
         }
 
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: config.modelName, // 'deepseek-chat' or 'gim4.7'
-                messages: [
-                    { role: "user", content: finalPrompt }
-                ],
-                response_format: responseFormat,
-                stream: false
-            })
-        });
+        try {
+            const response = await fetch(finalUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: config.modelName,
+                    messages: [
+                        { role: "user", content: finalPrompt }
+                    ],
+                    response_format: responseFormat,
+                    stream: false,
+                    temperature: 0.7,
+                    max_tokens: 4096 
+                })
+            });
 
-        if (!response.ok) {
-            const err = await response.text();
-            throw new Error(`AI Request Failed: ${response.status} - ${err}`);
+            // Handle non-200 errors first
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error("[AI] Error Response Body:", errText);
+                throw new Error(`AI Request Failed: ${response.status} ${response.statusText} - ${errText.substring(0, 200)}...`);
+            }
+
+            // Read raw text first to handle cases where 200 OK returns HTML (common with proxies)
+            const rawText = await response.text();
+            
+            let data;
+            try {
+                data = JSON.parse(rawText);
+            } catch (e) {
+                console.error("[AI] JSON Parse Error. Raw Text:", rawText);
+                // Detect common Proxy HTML responses
+                if (rawText.includes("<!DOCTYPE html>") || rawText.includes("cors-anywhere")) {
+                    throw new Error(`Proxy Error: Received HTML instead of JSON. The CORS proxy might require activation or is blocked. Raw: ${rawText.substring(0, 50)}...`);
+                }
+                throw new Error(`Invalid JSON response from API. Raw response: ${rawText.substring(0, 100)}...`);
+            }
+
+            // Support both standard content and reasoning_content (for R1 models)
+            const choice = data.choices?.[0]?.message;
+            const content = choice?.content || choice?.reasoning_content || "";
+            
+            if (!content && !choice) {
+                 throw new Error(`Empty response content. Full data: ${JSON.stringify(data).substring(0, 200)}`);
+            }
+
+            // Clean up Markdown code blocks
+            const cleanContent = content.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
+            return cleanContent;
+
+        } catch (error: any) {
+            console.error("[AI] Network or Parsing Error:", error);
+            
+            if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
+                 throw new Error(
+                     `网络请求失败 (Failed to fetch)。\n` +
+                     `请检查 CORS 代理设置或本地 Vite 代理配置。`
+                 );
+            }
+            throw error;
         }
-
-        const data = await response.json();
-        return data.choices?.[0]?.message?.content || "";
     }
 };
 

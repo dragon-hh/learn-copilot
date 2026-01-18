@@ -108,9 +108,10 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
             if (text) {
                 setQuestion(text);
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            setQuestion("生成问题失败，请检查设置中的模型配置。");
+            // Show the actual error message from utils/ai.ts
+            setQuestion(`生成问题失败: ${e.message || "未知错误"}`);
         }
     };
 
@@ -137,7 +138,33 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
             const text = await generateAIContent(promptTemplate, gradingSchema);
 
             if (text) {
-                const result = JSON.parse(text);
+                let rawResult = JSON.parse(text);
+                
+                // --- ROBUST PARSING LOGIC START ---
+                // 1. Handle nested structures (DeepSeek often returns { evaluation: { ... } })
+                let parsedData = rawResult;
+                if (rawResult.evaluation) {
+                    parsedData = rawResult.evaluation;
+                } else if (rawResult.result) {
+                    parsedData = rawResult.result;
+                }
+
+                // 2. Extract fields (handle case sensitivity)
+                let score = parsedData.score ?? parsedData.Score ?? 0;
+                const feedback = parsedData.feedback ?? parsedData.Feedback ?? parsedData.reason ?? "AI 未提供详细反馈";
+
+                // 3. Normalize Score (Handle 10-point scale vs 100-point scale)
+                // If score is <= 10 (and not 0), assume it's a 10-point scale and convert to 100.
+                if (typeof score === 'string') score = parseFloat(score);
+                if (score <= 10 && score > 0) {
+                    score = score * 10;
+                }
+                // Cap at 100 just in case
+                if (score > 100) score = 100;
+                
+                // --- ROBUST PARSING LOGIC END ---
+
+                const result = { score, feedback };
                 setGrade(result);
 
                 // Save Logic
@@ -169,9 +196,9 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
                     timestamp: Date.now()
                 });
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            alert("评分失败，请检查模型配置或网络。");
+            alert(`评分失败: ${e.message || "请检查模型配置或网络"}`);
         } finally {
             setIsLoading(false);
         }

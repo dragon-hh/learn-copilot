@@ -39,7 +39,11 @@ Context:
 {{context}}`,
 
     [PromptKey.EVALUATE_ANSWER]: `Evaluate the user's answer to the question based on the provided context.
-IMPORTANT: Provide the feedback in Chinese (Simplified).
+IMPORTANT: 
+1. Provide the feedback in Chinese (Simplified).
+2. Return a valid JSON object.
+3. The JSON must contain exactly two fields: "score" (number 0-100) and "feedback" (string). 
+4. Do not wrap the JSON in a root object like "evaluation".
 
 Context: {{context}}
 Question: {{question}}
