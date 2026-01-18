@@ -15,7 +15,7 @@ export const Practice: React.FC<PracticeProps> = ({ userId, onStartAssessment })
         const results = getAssessmentResults(userId);
         const now = Date.now();
         
-        // Filter due items
+        // Filter due items (Next review date is in the past or now)
         const due = results.filter(r => r.nextReviewDate <= now);
         setDueItems(due);
 
@@ -64,4 +64,31 @@ export const Practice: React.FC<PracticeProps> = ({ userId, onStartAssessment })
                         {dueItems.map(item => (
                             <div key={item.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col">
                                 <div className="mb-4">
-                                    <div className="flex justify-between items-start mb-
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded ${item.score < 60 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+                                            上次得分: {item.score}
+                                        </span>
+                                        <span className="material-symbols-outlined text-amber-500">priority_high</span>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-slate-900 mb-1">{item.nodeLabel}</h3>
+                                    <p className="text-xs text-slate-400">
+                                        复习次数: {item.repetition}
+                                    </p>
+                                </div>
+                                
+                                <button 
+                                    onClick={() => onStartAssessment(item.kbId, item.nodeId, item.nodeLabel)}
+                                    className="mt-auto w-full py-3 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-primary/20"
+                                >
+                                    <span className="material-symbols-outlined">quiz</span>
+                                    立即复习
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+             </div>
+          </div>
+        </div>
+    );
+};
