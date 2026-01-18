@@ -12,9 +12,9 @@ const MODEL_OPTIONS = [
     { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
     { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro' },
     { value: 'gemini-2.5-flash-preview', label: 'Gemini 2.5 Flash' },
-    { value: 'gim4.7', label: 'gim4.7 (Custom)' },
-    { value: 'deepseek-chat', label: 'DeepSeek Chat' },
-    { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner' }
+    { value: 'deepseek-chat', label: 'DeepSeek V3 (Official)' },
+    { value: 'deepseek-reasoner', label: 'DeepSeek R1 (Official)' },
+    { value: 'custom', label: '自定义 / NVIDIA NIM / 其他 OpenAI 兼容模型' }
 ];
 
 export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser }) => {
@@ -79,6 +79,26 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
     const handleSaveModelConfig = () => {
         saveModelConfig(modelConfig);
         showSuccessMessage();
+    };
+
+    // Determine current dropdown value
+    // If modelName is not in the predefined list (excluding 'custom'), we treat it as 'custom' mode
+    const getCurrentSelectValue = () => {
+        const isPredefined = MODEL_OPTIONS.some(opt => opt.value === modelConfig.modelName && opt.value !== 'custom');
+        return isPredefined ? modelConfig.modelName : 'custom';
+    };
+
+    const handleModelSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const value = e.target.value;
+        if (value === 'custom') {
+            // If switching to custom, keep current value if it's already custom-like, or clear it if it was a preset
+            const isPredefined = MODEL_OPTIONS.some(opt => opt.value === modelConfig.modelName && opt.value !== 'custom');
+            if (isPredefined) {
+                setModelConfig({ ...modelConfig, modelName: '' }); 
+            }
+        } else {
+            setModelConfig({ ...modelConfig, modelName: value });
+        }
     };
 
     // --- Prompt Handlers ---
@@ -189,15 +209,15 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
                     <div className="flex flex-col gap-6">
                         <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex gap-3 text-blue-800 text-sm">
                             <span className="material-symbols-outlined">settings_suggest</span>
-                            <p>在此配置全局 AI 模型。如不填 API Key，系统将尝试使用默认环境变量。</p>
+                            <p>支持配置 Gemini、DeepSeek、NVIDIA NIM 或任何兼容 OpenAI 接口的模型。</p>
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">选择模型</label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">模型提供商 / 类型</label>
                             <div className="relative">
                                 <select 
-                                    value={modelConfig.modelName}
-                                    onChange={(e) => setModelConfig({...modelConfig, modelName: e.target.value})}
+                                    value={getCurrentSelectValue()}
+                                    onChange={handleModelSelectChange}
                                     className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none appearance-none font-medium"
                                 >
                                     {MODEL_OPTIONS.map(opt => (
@@ -208,16 +228,31 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
                             </div>
                         </div>
 
+                        {/* Conditional Custom Model Input */}
+                        {getCurrentSelectValue() === 'custom' && (
+                            <div className="animate-fade-in-up">
+                                <label className="block text-xs font-bold text-primary uppercase mb-1">自定义模型 ID (Model Name)</label>
+                                <input 
+                                    type="text" 
+                                    value={modelConfig.modelName}
+                                    onChange={(e) => setModelConfig({...modelConfig, modelName: e.target.value})}
+                                    placeholder="例如: deepseek-ai/deepseek-v3.2"
+                                    className="w-full px-4 py-3 rounded-xl bg-white border-2 border-primary/20 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all font-mono text-sm"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">请输入 NVIDIA 或其他服务商提供的确切模型名称。</p>
+                            </div>
+                        )}
+
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">自定义 API Endpoint (Request Address)</label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Base URL</label>
                             <input 
                                 type="text" 
                                 value={modelConfig.baseUrl || ''}
                                 onChange={(e) => setModelConfig({...modelConfig, baseUrl: e.target.value})}
-                                placeholder={modelConfig.modelName.includes('deepseek') ? 'https://api.deepseek.com' : 'Optional (leave empty for default)'}
+                                placeholder="例如: https://integrate.api.nvidia.com/v1"
                                 className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all font-mono text-sm"
                             />
-                            <p className="text-[10px] text-slate-400 mt-1">仅在使用非 Google 官方模型或需要代理时填写。</p>
+                            <p className="text-[10px] text-slate-400 mt-1">留空则使用默认地址。对于 NVIDIA，请填写 <code className="bg-slate-100 px-1 rounded">https://integrate.api.nvidia.com/v1</code></p>
                         </div>
 
                         <div>
@@ -229,7 +264,7 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
                                 placeholder="sk-..."
                                 className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all font-mono text-sm"
                             />
-                            <p className="text-[10px] text-slate-400 mt-1">留空则使用系统默认 Key。您的 Key 仅存储在本地浏览器中。</p>
+                            <p className="text-[10px] text-slate-400 mt-1">您的 Key 仅存储在本地浏览器中。</p>
                         </div>
 
                         <div className="pt-4">
@@ -294,8 +329,8 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
                             保存配置
                         </button>
                     </div>
-                    {/* Increased spacer to ensure footer doesn't cover content at the bottom */}
-                    <div className="h-1"></div>
+                    {/* Spacer to prevent footer from covering content */}
+                    <div className="h-40"></div>
                 </div>
             )}
         </div>
