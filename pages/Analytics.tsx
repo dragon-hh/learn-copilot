@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { generateAIContent, Type } from '../utils/ai';
 import { getAssessmentHistory, getAssessmentResults, saveAiInsights, getAiInsights, AiInsightsData } from '../utils/storage';
+import { syncAiInsights } from '../utils/server-sync';
 import { AssessmentHistoryLog, AssessmentResult } from '../types';
 import { getPrompt, PromptKey } from '../utils/prompts';
 
@@ -97,6 +98,9 @@ export const Analytics: React.FC<AnalyticsProps> = ({ userId }) => {
                 };
                 setAiInsights(newData);
                 saveAiInsights(userId, newData);
+                
+                // 同步到服务器
+                await syncAiInsights(userId, newData);
             }
         } catch (error) {
             console.error("AI Insight generation failed", error);

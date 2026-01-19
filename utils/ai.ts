@@ -67,7 +67,7 @@ export const generateAIContent = async (
         let responseFormat: any = undefined;
 
         if (schema) {
-            finalPrompt += `\n\nIMPORTANT: Provide your response in valid JSON format. Do not use Markdown code blocks (like \`\`\`json). Just return the raw JSON string.`;
+            //finalPrompt += `\n\nIMPORTANT: Provide your response in valid JSON format. Do not use Markdown code blocks (like \`\`\`json). Just return the raw JSON string.`;
             
             // NOTE: Enable response_format for known providers that support JSON mode.
             // This now includes official DeepSeek, SiliconFlow (deepseek-ai/...), and generic "json" models.

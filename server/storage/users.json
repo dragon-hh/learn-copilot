@@ -1,0 +1,30 @@
+[
+  {
+    "id": "user-1768757605565",
+    "username": "tutu",
+    "password": "1",
+    "avatar": "https://ui-avatars.com/api/?background=random&name=tutu",
+    "createdAt": "2026-01-18T17:33:25.565Z"
+  },
+  {
+    "id": "user-1768757614284",
+    "username": "yxy",
+    "password": "1",
+    "avatar": "https://ui-avatars.com/api/?background=random&name=yxy",
+    "createdAt": "2026-01-18T17:33:34.284Z"
+  },
+  {
+    "id": "user-1768757890438",
+    "username": "阿萨大大",
+    "password": "1",
+    "avatar": "https://ui-avatars.com/api/?background=random&name=%E9%98%BF%E8%90%A8%E5%A4%A7%E5%A4%A7",
+    "createdAt": "2026-01-18T17:38:10.438Z"
+  },
+  {
+    "id": "user-1768758266201",
+    "username": "dragonhuang",
+    "password": "1",
+    "avatar": "https://ui-avatars.com/api/?background=random&name=dragonhuang",
+    "createdAt": "2026-01-18T17:44:26.201Z"
+  }
+]

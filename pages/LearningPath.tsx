@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { generateAIContent, Type } from '../utils/ai';
 import { KnowledgeBase, LearningPathData, AssessmentResult } from '../types';
 import { getUserData, saveUserData, getAssessmentResults } from '../utils/storage';
+import { fetchUserData, syncUserData } from '../utils/server-sync';
 import { getPrompt, PromptKey } from '../utils/prompts';
 
 interface LearningPathProps {
@@ -16,9 +17,14 @@ export const LearningPath: React.FC<LearningPathProps> = ({ userId, onStartAsses
     const [userResults, setUserResults] = useState<AssessmentResult[]>([]);
 
     useEffect(() => {
-        const data = getUserData(userId);
-        setBases(data.filter(b => b.graphData));
-        setUserResults(getAssessmentResults(userId));
+        const load = async () => {
+            // Try to load from server first
+            const serverData = await fetchUserData(userId);
+            const data = serverData ? serverData : getUserData(userId);
+            setBases(data.filter(b => b.graphData));
+            setUserResults(getAssessmentResults(userId));
+        };
+        load();
     }, [userId]);
 
     const getMasteryStatus = (nodeId: string) => {
@@ -78,6 +84,8 @@ export const LearningPath: React.FC<LearningPathProps> = ({ userId, onStartAsses
                 const updatedBases = allBases.map(b => b.id === updatedBase.id ? updatedBase : b);
                 
                 saveUserData(userId, updatedBases);
+                // Sync to server
+                await syncUserData(userId, updatedBases);
                 setBases(updatedBases.filter(b => b.graphData));
                 setSelectedBase(updatedBase);
             }

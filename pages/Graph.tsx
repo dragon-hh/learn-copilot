@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { generateAIContent } from '../utils/ai';
 import { GraphData, KnowledgeBase } from '../types';
 import { getUserData } from '../utils/storage';
+import { fetchUserData } from '../utils/server-sync';
 import { getPrompt, PromptKey } from '../utils/prompts';
 
 interface GraphProps {
@@ -279,8 +280,18 @@ export const Graph: React.FC<GraphProps> = ({ userId }) => {
     const [selectedBase, setSelectedBase] = useState<KnowledgeBase | null>(null);
 
     useEffect(() => {
-        const data = getUserData(userId);
-        setBases(data);
+        const load = async () => {
+            // Try to load from server first
+            const serverData = await fetchUserData(userId);
+            if (serverData) {
+                setBases(serverData);
+            } else {
+                // Fallback to localStorage
+                const data = getUserData(userId);
+                setBases(data);
+            }
+        };
+        load();
     }, [userId]);
 
     if (selectedBase && selectedBase.graphData) {

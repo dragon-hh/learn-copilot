@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { PROMPT_DESCRIPTIONS, PromptKey, getAllPrompts, saveAllPrompts, resetPrompts, DEFAULT_PROMPTS } from '../utils/prompts';
 import { registerUser, getModelConfig, saveModelConfig, ModelConfig } from '../utils/storage';
+import { syncModelConfig, syncPromptsConfig } from '../utils/server-sync';
 
 interface SettingsProps {
     currentUser: User;
@@ -76,8 +77,10 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
     };
 
     // --- Model Handlers ---
-    const handleSaveModelConfig = () => {
+    const handleSaveModelConfig = async () => {
         saveModelConfig(modelConfig);
+        // 同步到服务器
+        await syncModelConfig(modelConfig);
         showSuccessMessage();
     };
 
@@ -106,8 +109,10 @@ export const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateUser })
         setPrompts(prev => ({ ...prev, [key]: value }));
     };
 
-    const handleSavePrompts = () => {
+    const handleSavePrompts = async () => {
         saveAllPrompts(prompts);
+        // 同步到服务器
+        await syncPromptsConfig(prompts);
         showSuccessMessage();
     };
 

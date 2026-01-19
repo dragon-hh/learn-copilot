@@ -1,0 +1,33 @@
+[
+  {
+    "id": "1768757772232",
+    "title": "REACT",
+    "description": "新的空白知识库，等待您导入内容。",
+    "tag": "General",
+    "progress": 0,
+    "status": "未开始",
+    "lastUpdated": "2026/1/19",
+    "files": [],
+    "graphData": null
+  },
+  {
+    "id": "1768757641782",
+    "title": "Vue",
+    "description": "新的空白知识库，等待您导入内容。",
+    "tag": "General",
+    "progress": 0,
+    "status": "未开始",
+    "lastUpdated": "2026/1/19",
+    "files": [
+      {
+        "id": "17687576500800.37344454344913536",
+        "name": "Vue.js_前端开发_快速入门与专业应用.pdf",
+        "type": "pdf",
+        "size": "3667.2 KB",
+        "date": "2026/1/19",
+        "content": "[PDF Content Placeholder - Text extraction required]"
+      }
+    ],
+    "graphData": null
+  }
+]

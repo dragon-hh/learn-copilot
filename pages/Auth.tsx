@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { loginUser, registerUser } from '../utils/storage';
+import { syncUserData, loginUserWithServer, registerUserWithServer } from '../utils/server-sync';
 import { User } from '../types';
 
 interface AuthProps {
@@ -12,6 +13,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [avatarPreview, setAvatarPreview] = useState<string>('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const DEFAULT_AVATAR = "https://ui-avatars.com/api/?background=random&name=";
@@ -27,31 +29,80 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
     if (!username || !password) {
       setError('请填写所有必填项');
+      setIsLoading(false);
       return;
     }
 
-    if (isRegistering) {
-      // Use uploaded avatar or generate a default one based on username
-      const finalAvatar = avatarPreview || `${DEFAULT_AVATAR}${encodeURIComponent(username)}`;
-      const user = registerUser(username, password, finalAvatar);
-      if (user) {
-        onLogin(user);
+    try {
+      if (isRegistering) {
+        // Use uploaded avatar or generate a default one based on username
+        const finalAvatar = avatarPreview || `${DEFAULT_AVATAR}${encodeURIComponent(username)}`;
+        
+        // Try to register with server first
+        let serverUser = await registerUserWithServer(username, password, finalAvatar);
+        
+        if (serverUser) {
+          // Server registration successful - use server user object directly
+          onLogin(serverUser as User);
+          
+          // Sync to localStorage in background (for offline access)
+          try {
+            registerUser(username, password, finalAvatar);
+          } catch (err) {
+            console.warn('Failed to sync to localStorage:', err);
+          }
+        } else {
+          // Fallback: if server fails, try local registration
+          const localUser = registerUser(username, password, finalAvatar);
+          if (localUser) {
+            // Attempt async server sync
+            await syncUserData(localUser.id, []);
+            onLogin(localUser);
+          } else {
+            setError('该用户名已存在');
+          }
+        }
       } else {
-        setError('该用户名已存在');
+        // Try to login with server first
+        let serverUser = await loginUserWithServer(username, password);
+        
+        if (serverUser) {
+          // Server login successful - use server user object directly
+          // This ensures the userid is consistent across all browsers
+          onLogin(serverUser as User);
+          
+          // Sync to localStorage in background (for offline access)
+          try {
+            const localUser = loginUser(username, password);
+            if (!localUser) {
+              // If not in local storage, create a record (but don't use its ID)
+              registerUser(username, password, serverUser.avatar || `${DEFAULT_AVATAR}${encodeURIComponent(username)}`);
+            }
+          } catch (err) {
+            console.warn('Failed to sync to localStorage:', err);
+          }
+        } else {
+          // Fallback: try local login
+          const localUser = loginUser(username, password);
+          if (localUser) {
+            onLogin(localUser);
+          } else {
+            setError('用户名或密码错误');
+          }
+        }
       }
-    } else {
-      const user = loginUser(username, password);
-      if (user) {
-        onLogin(user);
-      } else {
-        setError('用户名或密码错误');
-      }
+    } catch (err) {
+      setError('请求失败，请检查网络连接');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -139,9 +190,11 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
           <button 
             type="submit"
-            className="mt-2 w-full py-3.5 bg-primary hover:bg-primary-dark text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-95"
+            disabled={isLoading}
+            className="mt-2 w-full py-3.5 bg-primary hover:bg-primary-dark disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-2"
           >
-            {isRegistering ? '创建新账号' : '进入应用'}
+            {isLoading && <span className="material-symbols-outlined animate-spin text-lg">hourglass_empty</span>}
+            {isLoading ? (isRegistering ? '注册中...' : '登录中...') : (isRegistering ? '创建新账号' : '进入应用')}
           </button>
         </form>
       </div>

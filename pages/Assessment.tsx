@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { generateAIContent, Type } from '../utils/ai';
 import { AssessmentContextType } from '../App';
 import { getUserData, saveAssessmentResult, saveAssessmentHistory, calculateSRS, getAssessmentResults, getAssessmentHistory } from '../utils/storage';
+import { syncAssessmentResults, syncAssessmentHistory } from '../utils/server-sync';
 import { KnowledgeBase, AssessmentHistoryLog } from '../types';
 import { getPrompt, PromptKey } from '../utils/prompts';
 
@@ -172,7 +173,7 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
                 const prevResult = prevResults.find(r => r.nodeId === context.nodeId);
                 const srsData = calculateSRS(prevResult, result.score);
 
-                saveAssessmentResult(userId, {
+                const assessmentResult = {
                     id: Date.now().toString(),
                     kbId: context.kbId,
                     nodeId: context.nodeId,
@@ -181,9 +182,9 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
                     feedback: result.feedback,
                     timestamp: Date.now(),
                     ...srsData
-                });
+                };
 
-                saveAssessmentHistory(userId, {
+                const historyLog = {
                     id: Date.now().toString(),
                     userId: userId,
                     kbId: context.kbId,
@@ -194,7 +195,17 @@ export const Assessment: React.FC<AssessmentProps> = ({ userId, context, onNextN
                     score: result.score,
                     feedback: result.feedback,
                     timestamp: Date.now()
-                });
+                };
+
+                // Save to localStorage
+                saveAssessmentResult(userId, assessmentResult);
+                saveAssessmentHistory(userId, historyLog);
+
+                // Sync to server asynchronously
+                const allResults = getAssessmentResults(userId);
+                const allHistory = getAssessmentHistory(userId);
+                await syncAssessmentResults(userId, allResults);
+                await syncAssessmentHistory(userId, allHistory);
             }
         } catch (e: any) {
             console.error(e);

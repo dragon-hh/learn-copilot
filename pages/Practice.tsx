@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getAssessmentResults } from '../utils/storage';
+import { fetchAssessmentResults } from '../utils/server-sync';
 import { AssessmentResult } from '../types';
 
 interface PracticeProps {
@@ -12,18 +13,23 @@ export const Practice: React.FC<PracticeProps> = ({ userId, onStartAssessment })
     const [mastery, setMastery] = useState(0);
 
     useEffect(() => {
-        const results = getAssessmentResults(userId);
-        const now = Date.now();
-        
-        // Filter due items (Next review date is in the past or now)
-        const due = results.filter(r => r.nextReviewDate <= now);
-        setDueItems(due);
+        const load = async () => {
+            // Try to load from server first
+            const serverResults = await fetchAssessmentResults(userId);
+            const results = serverResults ? serverResults : getAssessmentResults(userId);
+            const now = Date.now();
+            
+            // Filter due items (Next review date is in the past or now)
+            const due = results.filter(r => r.nextReviewDate <= now);
+            setDueItems(due);
 
-        // Calculate simple mastery (avg of scores)
-        if (results.length > 0) {
-            const avg = results.reduce((acc, curr) => acc + curr.score, 0) / results.length;
-            setMastery(Math.round(avg));
-        }
+            // Calculate simple mastery (avg of scores)
+            if (results.length > 0) {
+                const avg = results.reduce((acc, curr) => acc + curr.score, 0) / results.length;
+                setMastery(Math.round(avg));
+            }
+        };
+        load();
     }, [userId]);
 
     return (

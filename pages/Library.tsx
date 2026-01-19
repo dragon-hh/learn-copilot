@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { generateAIContent, Type } from '../utils/ai';
 import { GraphData, KnowledgeBase, KnowledgeFile, FileType } from '../types';
 import { getUserData, saveUserData } from '../utils/storage';
+import { syncUserData, fetchUserData } from '../utils/server-sync';
 import { getPrompt, PromptKey } from '../utils/prompts';
 
 interface LibraryProps {
@@ -104,14 +105,28 @@ export const Library: React.FC<LibraryProps> = ({ userId }) => {
 
   // Load data on mount
   useEffect(() => {
-    const data = getUserData(userId);
-    setBases(data);
+    const load = async () => {
+      // Try to load from server first
+      const serverData = await fetchUserData(userId);
+      if (serverData) {
+        saveUserData(userId, serverData);
+        setBases(serverData);
+      } else {
+        // Fallback to localStorage
+        const data = getUserData(userId);
+        setBases(data);
+      }
+    };
+    load();
   }, [userId]);
 
   // Save helper
-  const updateBases = (newBases: KnowledgeBase[]) => {
+  const updateBases = async (newBases: KnowledgeBase[]) => {
     setBases(newBases);
     saveUserData(userId, newBases);
+    
+    // 异步同步到服务器
+    await syncUserData(userId, newBases);
     
     // Also update active base reference if open
     if (activeBase) {
